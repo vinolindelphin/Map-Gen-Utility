@@ -88,16 +88,16 @@ def make_bq_client():
         creds = service_account.Credentials.from_service_account_info(sa_info)
         return bigquery.Client(credentials=creds, project=creds.project_id), src
 
-    # C) Env var (local dev)
-    gac = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
-    if gac and os.path.exists(gac):
-        return bigquery.Client(), f"env:GOOGLE_APPLICATION_CREDENTIALS={gac}"
+    # # C) Env var (local dev)
+    # gac = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
+    # if gac and os.path.exists(gac):
+    #     return bigquery.Client(), f"env:GOOGLE_APPLICATION_CREDENTIALS={gac}"
 
-    # D) Local fallback (only for your laptop)
-    LOCAL_SA_PATH = r"C:\Users\vinolin_delphin_spic\Documents\Credentials\vinolin_delphin_spicemoney-dwh_new.json"
-    if os.path.exists(LOCAL_SA_PATH):
-        creds = service_account.Credentials.from_service_account_file(LOCAL_SA_PATH)
-        return bigquery.Client(credentials=creds, project=creds.project_id), f"local:{LOCAL_SA_PATH}"
+    # # D) Local fallback (only for your laptop)
+    # LOCAL_SA_PATH = r"C:\Users\vinolin_delphin_spic\Documents\Credentials\vinolin_delphin_spicemoney-dwh_new.json"
+    # if os.path.exists(LOCAL_SA_PATH):
+    #     creds = service_account.Credentials.from_service_account_file(LOCAL_SA_PATH)
+    #     return bigquery.Client(credentials=creds, project=creds.project_id), f"local:{LOCAL_SA_PATH}"
 
     raise RuntimeError(
         "No BigQuery credentials found.\n"
