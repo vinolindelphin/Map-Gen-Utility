@@ -1,9 +1,11 @@
-streamlit>=1.33
-pandas>=2.1
-geopandas>=0.14
-shapely>=2.0
-pyogrio>=0.7           # fast reader for GeoJSON; falls back if missing
-folium>=0.15
-google-cloud-bigquery>=3.11
-google-auth>=2.23
-python-dateutil>=2.8
+streamlit
+pandas>=2.0
+folium
+streamlit-folium
+geopandas
+shapely
+google-cloud-bigquery>=3.10.0
+google-cloud-bigquery-storage>=2.24.0   # optional but nice for speed
+db-dtypes>=1.2.0
+pyarrow>=10.0.0                         # pandas 2.0+ works well with this
+
