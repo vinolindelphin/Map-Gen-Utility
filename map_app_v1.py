@@ -185,17 +185,17 @@ def get_bq_client():
       C) Local hardcoded path (last resort for your laptop)
     """
     # A) Streamlit secrets (safe even if secrets.toml doesn't exist)
-    # sa_info = None
-    # try:
-    #     sa_info = st.secrets.get("gcp_service_account", None)
-    # except Exception:
-    #     sa_info = None
+    sa_info = None
+    try:
+        sa_info = st.secrets.get("gcp_service_account", None)
+    except Exception:
+        sa_info = None
 
-    # if sa_info:
-    #     if isinstance(sa_info, str):   # allow pasting raw JSON string
-    #         sa_info = json.loads(sa_info)
-    #     creds = service_account.Credentials.from_service_account_info(sa_info)
-    #     return bigquery.Client(credentials=creds, project=creds.project_id)
+    if sa_info:
+        if isinstance(sa_info, str):   # allow pasting raw JSON string
+            sa_info = json.loads(sa_info)
+        creds = service_account.Credentials.from_service_account_info(sa_info)
+        return bigquery.Client(credentials=creds, project=creds.project_id)
 
     # # B) Env var (local dev): set once in the shell before running streamlit
     # gac = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
@@ -208,6 +208,7 @@ def get_bq_client():
     credentials = service_account.Credentials.from_service_account_file(
     r'C:\Users\vinolin.delphin_spic\Documents\Credentials\vinolin_delphin_spicemoney-dwh_new.json')
     client = bigquery.Client(credentials= credentials,project=credentials.project_id)
+
     return client
     # LOCAL_SA_PATH = r"C:\Users\vinolin_delphin_spic\Documents\Credentials\vinolin_delphin_spicemoney-dwh_new.json"
     # if os.path.exists(LOCAL_SA_PATH):
