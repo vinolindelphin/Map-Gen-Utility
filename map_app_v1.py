@@ -395,7 +395,7 @@ def run_query_cached(sql: str, month_date: str, state_name: str) -> pd.DataFrame
             bigquery.ScalarQueryParameter("state", "STRING", state_name),
         ]
     )
-    return get_bq_client().query(sql, job_config=job_cfg).result().to_dataframe()
+    return get_bq_client().query(sql, job_config=job_cfg).result().to_dataframe(create_bqstorage_client=False, progress_bar_type=None)
 
 def run_query(kpi_key: str, month_date: str, state_name: str) -> pd.DataFrame:
     cfg = KPI_CONFIG[kpi_key]
