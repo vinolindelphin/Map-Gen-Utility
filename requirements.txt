@@ -5,7 +5,6 @@ streamlit-folium
 geopandas
 shapely
 google-cloud-bigquery>=3.10.0
-google-cloud-bigquery-storage>=2.24.0   # optional but nice for speed
 db-dtypes>=1.2.0
 pyarrow>=10.0.0                         # pandas 2.0+ works well with this
 
