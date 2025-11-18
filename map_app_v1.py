@@ -1,4 +1,4 @@
-# streamlit run app.py
+# streamlit run app.py -FINAL
 import re, json, calendar
 from datetime import date
 from dateutil.relativedelta import relativedelta
@@ -170,12 +170,55 @@ STATES = [
 
 # =============== Auth & Cache ===============
 
-credentials = service_account.Credentials.from_service_account_file(
-    r'C:\Users\vinolin.delphin_spic\Documents\Credentials\vinolin_delphin_spicemoney-dwh_new.json')
+
+
+import os, json
+import streamlit as st
+from google.cloud import bigquery
+from google.oauth2 import service_account
 
 def get_bq_client():
+    """
+    Order of credential sources:
+      A) st.secrets["gcp_service_account"]  (Cloud OR local .streamlit/secrets.toml)
+      B) GOOGLE_APPLICATION_CREDENTIALS env var (local)
+      C) Local hardcoded path (last resort for your laptop)
+    """
+    # A) Streamlit secrets (safe even if secrets.toml doesn't exist)
+    # sa_info = None
+    # try:
+    #     sa_info = st.secrets.get("gcp_service_account", None)
+    # except Exception:
+    #     sa_info = None
+
+    # if sa_info:
+    #     if isinstance(sa_info, str):   # allow pasting raw JSON string
+    #         sa_info = json.loads(sa_info)
+    #     creds = service_account.Credentials.from_service_account_info(sa_info)
+    #     return bigquery.Client(credentials=creds, project=creds.project_id)
+
+    # # B) Env var (local dev): set once in the shell before running streamlit
+    # gac = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
+    # if gac and os.path.exists(gac):
+    #     return bigquery.Client()  # google lib reads the JSON from env var
+
+    # C) Local file path (your machine only). Change to your real path:
+
+
+    credentials = service_account.Credentials.from_service_account_file(
+    r'C:\Users\vinolin.delphin_spic\Documents\Credentials\vinolin_delphin_spicemoney-dwh_new.json')
     client = bigquery.Client(credentials= credentials,project=credentials.project_id)
     return client
+    # LOCAL_SA_PATH = r"C:\Users\vinolin_delphin_spic\Documents\Credentials\vinolin_delphin_spicemoney-dwh_new.json"
+    # if os.path.exists(LOCAL_SA_PATH):
+    #     creds = service_account.Credentials.from_service_account_file(LOCAL_SA_PATH)
+    #     return bigquery.Client(credentials=creds, project=creds.project_id)
+
+    # raise RuntimeError(
+    #     "No BigQuery credentials found.\n"
+    #     "Add gcp_service_account to st.secrets OR set GOOGLE_APPLICATION_CREDENTIALS OR point to a local JSON path."
+    # )
+
 
 def normalize_pin_series(s: pd.Series) -> pd.Series:
     return s.astype(str).str.extract(r"(\d{6})", expand=False)
