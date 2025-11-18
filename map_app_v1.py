@@ -188,6 +188,7 @@ def get_bq_client():
     sa_info = None
     try:
         sa_info = st.secrets.get("gcp_service_account", None)
+        print("sa_infoe:", sa_info)
     except Exception:
         sa_info = None
 
@@ -205,11 +206,12 @@ def get_bq_client():
     # C) Local file path (your machine only). Change to your real path:
 
 
-    credentials = service_account.Credentials.from_service_account_file(
-    r'C:\Users\vinolin.delphin_spic\Documents\Credentials\vinolin_delphin_spicemoney-dwh_new.json')
-    client = bigquery.Client(credentials= credentials,project=credentials.project_id)
+    # credentials = service_account.Credentials.from_service_account_file(
+    # r'C:\Users\vinolin.delphin_spic\Documents\Credentials\vinolin_delphin_spicemoney-dwh_new.json')
+    # client = bigquery.Client(credentials= credentials,project=credentials.project_id)
 
-    return client
+    # return client
+
     # LOCAL_SA_PATH = r"C:\Users\vinolin_delphin_spic\Documents\Credentials\vinolin_delphin_spicemoney-dwh_new.json"
     # if os.path.exists(LOCAL_SA_PATH):
     #     creds = service_account.Credentials.from_service_account_file(LOCAL_SA_PATH)
