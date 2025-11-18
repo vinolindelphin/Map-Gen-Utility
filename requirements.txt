@@ -1,0 +1,9 @@
+streamlit>=1.33
+pandas>=2.1
+geopandas>=0.14
+shapely>=2.0
+pyogrio>=0.7           # fast reader for GeoJSON; falls back if missing
+folium>=0.15
+google-cloud-bigquery>=3.11
+google-auth>=2.23
+python-dateutil>=2.8
