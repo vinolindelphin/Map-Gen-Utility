@@ -13,7 +13,7 @@ from streamlit.components.v1 import html as st_html
 from google.cloud import bigquery
 from google.oauth2 import service_account
 
-SHOW_DEBUG = False  # <- set True only when you want to see auth/status tiles
+SHOW_DEBUG = True  # <- set True only when you want to see auth/status tiles
 
 
 # ================= CONFIG =================
