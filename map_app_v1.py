@@ -13,6 +13,9 @@ from streamlit.components.v1 import html as st_html
 from google.cloud import bigquery
 from google.oauth2 import service_account
 
+SHOW_DEBUG = False  # <- set True only when you want to see auth/status tiles
+
+
 # ================= CONFIG =================
 GEOJSON_PATH = "All_India_pincode_Boundary-19312.geojson"
 SIMPLIFY_TOLERANCE_M = 500  # 0 disables
@@ -20,78 +23,112 @@ SIMPLIFY_TOLERANCE_M = 500  # 0 disables
 # Colors: dark red -> dark green
 R2G8 = ["#8B0000","#B22222","#FF0000","#FF4500","#FF7F00",
         "#FFD700","#90EE90","#006400"]
+import os, json
+import streamlit as st
+from google.cloud import bigquery
+from google.oauth2 import service_account
+
+# For Python 3.11+, tomllib is built-in. If you are on 3.10 use:  pip install tomli
+try:
+    import tomllib  # py311+
+except Exception:
+    import tomli as tomllib  # py310 fallback
+
+def _load_sa_from_toml_files():
+    """
+    Try to read gcp_service_account from a secrets.toml file on disk:
+      1) %USERPROFILE%\.streamlit\secrets.toml
+      2) <CWD>\.streamlit\secrets.toml
+    Returns (dict_or_None, source_str)
+    """
+    candidates = [
+        os.path.join(os.environ.get("USERPROFILE", ""), ".streamlit", "secrets.toml"),
+        os.path.join(os.getcwd(), ".streamlit", "secrets.toml"),
+    ]
+    for path in candidates:
+        try:
+            if path and os.path.exists(path):
+                with open(path, "rb") as f:
+                    data = tomllib.load(f)
+                sa = data.get("gcp_service_account")
+                if sa:
+                    # If the TOML table is a plain dict (already parsed), just return it
+                    return sa, f"file:{path}"
+        except Exception as e:
+            # show but keep trying others
+            st.sidebar.warning(f"Could not parse secrets at {path}: {e}")
+    return None, None
 
 def make_bq_client():
     """
-    Create a BigQuery client. Works on:
-      - Streamlit Cloud (st.secrets['gcp_service_account'])
-      - Local dev via GOOGLE_APPLICATION_CREDENTIALS
-      - Local dev via fallback file path
+    Build a BigQuery client, trying sources in this order:
+      A) st.secrets['gcp_service_account']
+      B) secrets.toml on disk (HOME and CWD)
+      C) GOOGLE_APPLICATION_CREDENTIALS
+      D) Local hardcoded path (your laptop only)
     Returns: (client, source_str)
     """
-    # A) Streamlit secrets (Cloud or local .streamlit/secrets.toml)
-    # sa_info = None
-    # print("*********************")
-    # try:
-    #     # sa_info = st.secrets.get("gcp_service_account", None)
-    #     print("********", pwd , "*************")
-    # except Exception:
-    #     sa_info = None
+    # A) Streamlit Secrets (Cloud or local .streamlit/secrets.toml recognized by Streamlit)
+    sa_info = None
+    try:
+        sa_info = st.secrets.get("gcp_service_account", None)
+    except Exception:
+        sa_info = None
 
-    # if sa_info:
-    #     if isinstance(sa_info, str):
-    #         sa_info = json.loads(sa_info)  # allow pasting raw JSON as a string
-    #     creds = service_account.Credentials.from_service_account_info(sa_info)
-    #     return bigquery.Client(credentials=creds, project=creds.project_id), "secrets:gcp_service_account"
+    if sa_info:
+        if isinstance(sa_info, str):
+            sa_info = json.loads(sa_info)  # if pasted as a raw JSON string
+        creds = service_account.Credentials.from_service_account_info(sa_info)
+        return bigquery.Client(credentials=creds, project=creds.project_id), "secrets:gcp_service_account"
 
-    # # B) Env var (local dev)
-    # gac = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
-    # if gac and os.path.exists(gac):
-    #     return bigquery.Client(), f"env:GOOGLE_APPLICATION_CREDENTIALS={gac}"
+    # B) Directly read secrets.toml from disk (HOME and CWD)
+    sa_info, src = _load_sa_from_toml_files()
+    if sa_info:
+        # keys in TOML table are already parsed as a dict
+        creds = service_account.Credentials.from_service_account_info(sa_info)
+        return bigquery.Client(credentials=creds, project=creds.project_id), src
 
-    # C) Local fallback (your laptop only) — adjust path if needed
-    # LOCAL_SA_PATH = r'C:\Users\vinolin_delphin_spic\Documents\Credentials\vinolin_delphin_spicemoney-dwh_new.json'
-    # if os.path.exists(LOCAL_SA_PATH):
-    #     creds = service_account.Credentials.from_service_account_file(LOCAL_SA_PATH)
-    #     return bigquery.Client(credentials=creds, project=creds.project_id), f"local:{LOCAL_SA_PATH}"
+    # C) Env var (local dev)
+    gac = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
+    if gac and os.path.exists(gac):
+        return bigquery.Client(), f"env:GOOGLE_APPLICATION_CREDENTIALS={gac}"
 
-    # raise RuntimeError(
-    #     "No BigQuery credentials found.\n"
-    #     "Set st.secrets['gcp_service_account'] on Cloud OR set GOOGLE_APPLICATION_CREDENTIALS "
-    #     "OR update LOCAL_SA_PATH for local runs."
-    # )
+    # D) Local fallback (only for your laptop)
+    LOCAL_SA_PATH = r"C:\Users\vinolin_delphin_spic\Documents\Credentials\vinolin_delphin_spicemoney-dwh_new.json"
+    if os.path.exists(LOCAL_SA_PATH):
+        creds = service_account.Credentials.from_service_account_file(LOCAL_SA_PATH)
+        return bigquery.Client(credentials=creds, project=creds.project_id), f"local:{LOCAL_SA_PATH}"
 
-    credentials = service_account.Credentials.from_service_account_file(
-    r'C:\Users\vinolin.delphin_spic\Documents\Credentials\vinolin_delphin_spicemoney-dwh_new.json')
-    client = bigquery.Client(credentials= credentials,project=credentials.project_id)
-    return client
+    raise RuntimeError(
+        "No BigQuery credentials found.\n"
+        "Place secrets.toml in HOME or CWD, set GOOGLE_APPLICATION_CREDENTIALS, "
+        "or update LOCAL_SA_PATH."
+    )
 
-
-
-
-
-
-def bq_healthcheck():
-    """
-    Try a trivial query to confirm the client works. Shows status in UI and logs.
-    """
+def bq_healthcheck(show=False):
     try:
         client, source = make_bq_client()
-        st.sidebar.info(f"BigQuery auth source: **{source}**")
-        test_df = client.query("SELECT 1 AS ok").result().to_dataframe()
-        if test_df.iloc[0]["ok"] == 1:
-            st.sidebar.success(f"BigQuery OK • project: {client.project}")
-        else:
-            st.sidebar.warning("BigQuery test returned unexpected result.")
+        if show:
+            st.sidebar.info(f"BigQuery auth source: **{source}**")
+        client.query("SELECT 1").result()  # smoke test
+        if show:
+            st.sidebar.success(f"BigQuery OK (project: {client.project})")
         return client
     except Exception as e:
-        # show in UI and logs
-        st.sidebar.error(f"BigQuery error: {e}")
-        st.exception(e)
+        # keep this visible only when debugging
+        if show:
+            st.sidebar.error(f"BigQuery error: {e}")
+            st.exception(e)
+        else:
+            st.error("BigQuery configuration error. Enable SHOW_DEBUG for details.")
         st.stop()
 
-# Validate BQ on load (shows source + project on the sidebar)
-# BQ_CLIENT = bq_healthcheck()
+
+
+
+BQ_CLIENT = bq_healthcheck(show=SHOW_DEBUG)
+
+
 
 
 
@@ -260,30 +297,36 @@ from google.cloud import bigquery
 from google.oauth2 import service_account
 
 
-
+# Build once, show status in the sidebar, fail fast if broken
+# BQ_CLIENT = bq_healthcheck()
 
 def get_bq_client():
-    """
-    Order of credential sources:
-      A) st.secrets["gcp_service_account"]  (Cloud OR local .streamlit/secrets.toml)
-      B) GOOGLE_APPLICATION_CREDENTIALS env var (local)
-      C) Local hardcoded path (last resort for your laptop)
-    """
-    # A) Streamlit secrets (safe even if secrets.toml doesn't exist)
-    sa_info = None
-    try:
-        sa_info = st.secrets.get("gcp_service_account", None)
-        print("sa_infoe:", sa_info)
-    except Exception:
-        sa_info = None
+    """Back-compat: return the verified, singleton BigQuery client."""
+    return BQ_CLIENT
 
-    if sa_info:
-        if isinstance(sa_info, str):   # allow pasting raw JSON string
-            sa_info = json.loads(sa_info)
-        creds = service_account.Credentials.from_service_account_info(sa_info)
-        return bigquery.Client(credentials=creds, project=creds.project_id)
 
-    # # B) Env var (local dev): set once in the shell before running streamlit
+# def get_bq_client():
+#     """
+#     Order of credential sources:
+#       A) st.secrets["gcp_service_account"]  (Cloud OR local .streamlit/secrets.toml)
+#       B) GOOGLE_APPLICATION_CREDENTIALS env var (local)
+#       C) Local hardcoded path (last resort for your laptop)
+#     """
+#     # A) Streamlit secrets (safe even if secrets.toml doesn't exist)
+#     sa_info = None
+#     try:
+#         sa_info = st.secrets.get("gcp_service_account", None)
+#         print("sa_infoe:", sa_info)
+#     except Exception:
+#         sa_info = None
+
+#     if sa_info:
+#         if isinstance(sa_info, str):   # allow pasting raw JSON string
+#             sa_info = json.loads(sa_info)
+#         creds = service_account.Credentials.from_service_account_info(sa_info)
+#         return bigquery.Client(credentials=creds, project=creds.project_id)
+
+    # B) Env var (local dev): set once in the shell before running streamlit
     # gac = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
     # if gac and os.path.exists(gac):
     #     return bigquery.Client()  # google lib reads the JSON from env var
@@ -291,11 +334,11 @@ def get_bq_client():
     # C) Local file path (your machine only). Change to your real path:
 
 
-    credentials = service_account.Credentials.from_service_account_file(
-    r'C:\Users\vinolin.delphin_spic\Documents\Credentials\vinolin_delphin_spicemoney-dwh_new.json')
-    client = bigquery.Client(credentials= credentials,project=credentials.project_id)
+    # credentials = service_account.Credentials.from_service_account_file(
+    # r'C:\Users\vinolin.delphin_spic\Documents\Credentials\vinolin_delphin_spicemoney-dwh_new.json')
+    # client = bigquery.Client(credentials= credentials,project=credentials.project_id)
 
-    return client
+    # return client
 
     # LOCAL_SA_PATH = r"C:\Users\vinolin_delphin_spic\Documents\Credentials\vinolin_delphin_spicemoney-dwh_new.json"
     # if os.path.exists(LOCAL_SA_PATH):
