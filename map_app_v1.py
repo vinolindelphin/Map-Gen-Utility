@@ -132,6 +132,14 @@ BQ_CLIENT = bq_healthcheck(show=SHOW_DEBUG)
 
 
 
+# def fmt_int(x):   return "—" if x is None or pd.isna(x) else f"{int(x):,}"
+# def fmt_lakh_from_rupees(x):
+#     if x is None or pd.isna(x): return "—"
+#     return f"{x/100000:,.2f} L"
+# def fmt_lakh_value(x):
+#     if x is None or pd.isna(x): return "—"
+#     return f"{x:,.2f} L"
+
 def fmt_int(x):   return "—" if x is None or pd.isna(x) else f"{int(x):,}"
 def fmt_lakh_from_rupees(x):
     if x is None or pd.isna(x): return "—"
@@ -140,13 +148,23 @@ def fmt_lakh_value(x):
     if x is None or pd.isna(x): return "—"
     return f"{x:,.2f} L"
 
+import math
+
+def fmt_int_or_dash(x):
+    if x is None or (isinstance(x, float) and math.isnan(x)):
+        return "0"          # or "—" if you prefer a dash
+    return f"{int(round(x))}"
+
+
 KPI_CONFIG = {
     "Trxn_SMAs": {
         "value_col": "Trxn_SMAs",
         "unit_name": "Transacting SMAs",
         "unit_fmt": fmt_int,
-        "bins": [0, 3, 8, 15, 20, 25, 35, 50, 10**9],
-        "colors": R2G8,
+        "bins": [0, 3, 8, 15, 20, 25, 35, 50, 100],
+        'colors':  ["#8B0000","#B22222","#FF0000","#FF4500","#FF7F00",
+                   "#FFA500","#FFD700","#90EE90","#32CD32","#006400"],
+        # "colors": R2G8,
         "sql": """
         WITH all_pincodes AS (
           SELECT DISTINCT pincode
@@ -176,8 +194,8 @@ KPI_CONFIG = {
     "AEPS_GTV_IN_LACS": {
         "value_col": "AEPS_GTV_IN_LACS",
         "unit_name": "AEPS GTV (Lakhs)",
-        "unit_fmt": fmt_lakh_value,
-        "bins": [0, 2, 5, 10, 15, 20, 25, 30, 50, 100, 10**9],
+        "unit_fmt": fmt_int,
+        "bins": [0, 2, 5, 10, 15, 20, 25, 30, 50, 100],
         "colors": ["#8B0000","#B22222","#FF0000","#FF4500","#FF7F00",
                    "#FFA500","#FFD700","#90EE90","#32CD32","#006400"],
         "sql": """
@@ -207,11 +225,12 @@ KPI_CONFIG = {
           ON t1.pincode = t2.pincode
         """
     },
-    "CMS_GTV": {
-        "value_col": "CMS_GTV",
+    "CMS_GTV_IN_LACS": {
+        "value_col": "CMS_GTV_IN_LACS",
         "unit_name": "CMS GTV (Lakhs)",
-        "unit_fmt": fmt_lakh_from_rupees,   # rupees -> show as Lakhs
-        "bins": [0, 2e5, 5e5, 1e6, 1.5e6, 2e6, 3e6, 5e6, 1e7, 1e12],
+        "unit_fmt": fmt_int,   
+        "bins": [0, 2, 5, 10, 15, 20, 25, 30, 50, 100],
+        # "bins": [0, 2e5, 5e5, 1e6, 1.5e6, 2e6, 3e6, 5e6, 1e7, 1e12],
         "colors": ["#8B0000","#B22222","#FF0000","#FF7F00","#FFD700",
                    "#ADFF2F","#90EE90","#32CD32","#006400"],
         "sql": """
@@ -234,13 +253,351 @@ KPI_CONFIG = {
           )
           GROUP BY pincode
         )
-        SELECT t1.pincode, COALESCE(CMS_GTV,0) AS CMS_GTV
+        SELECT t1.pincode, ROUND(COALESCE(CMS_GTV,0)/100000, 2) AS CMS_GTV_IN_LACS
         FROM all_pincodes AS t1
         LEFT JOIN cms_gtv_data AS t2
           ON t1.pincode = t2.pincode
         """
     },
-}
+
+
+
+    ########### Added on 26th Nov 2025 By Vinolin ########33
+    "GROSS_ADDS": {
+    "value_col": "GROSS_ADDS",
+    "unit_name": "Gross Adds (count)",
+    # "unit_fmt": fmt_int,
+    "unit_fmt": fmt_int_or_dash,
+
+    "bins": [0, 1, 2, 3, 4, 5, 6, 7, 8],
+    # Colors (0 is dark red; grey reserved ONLY for NaN/missing)
+    "colors": [
+        "#8B0000",  # 0
+        "#B22222",  # 1
+        "#FF0000",  # 2
+        "#FF7F00",  # 3
+        "#FFD700",  # 4
+        "#ADFF2F",  # 5
+        "#7FFF00",  # 6
+        "#32CD32",  # 7
+        "#006400",  # ≥8
+    ],
+
+    "discrete_counts": False,
+    "legend_labels": [ "1", "2", "3", "4", "5", "6", "7", "≥ 8"],   # optional; if present overrides the mode above
+
+    "sql": """
+        WITH all_pincodes AS (
+        SELECT DISTINCT pincode
+        FROM `spicemoney-dwh.analytics_dwh.v_pincode_master`
+        ),
+
+        gross_adds_data AS (
+        SELECT
+            pincode,
+            COUNT(DISTINCT agent_id) AS GROSS_ADDS
+        FROM (
+            SELECT
+            t1.retailer_id AS agent_id,
+            t2.final_pincode AS pincode
+            FROM `spicemoney-dwh.prod_dwh.client_details` AS t1
+            LEFT JOIN `spicemoney-dwh.analytics_dwh.v_client_pincode` AS t2
+            ON t1.retailer_id = t2.retailer_id
+            {state_clause}    -- WHERE t2.final_state = @state
+            AND t1.client_type = 'retailer'
+            AND DATE_TRUNC(DATE(t1.creation_date), MONTH) = @month
+            
+        )
+        GROUP BY pincode
+        )
+
+        SELECT
+        t1.pincode,
+        COALESCE(t2.GROSS_ADDS, 0) AS GROSS_ADDS
+        FROM all_pincodes AS t1
+        LEFT JOIN gross_adds_data AS t2
+        ON t1.pincode = t2.pincode
+        """
+        },
+
+    "SPs": {
+    "value_col": "SPs",
+    "unit_name": "SP Count (≥ 2.5L GTV)",
+    "unit_fmt": fmt_int,
+    "discrete_counts": False,
+    "legend_labels": None,
+    "bins": [0, 1, 4, 9, 16, 21, 26, 36, 51],
+    "colors": ["#8B0000", "#B22222", "#FF0000", "#FFF700", "#FFD700",
+               "#ADFF2F", "#90EE90", "#32CD32", "#006400"],
+
+  
+    "sql": """
+                    WITH all_pincodes AS (
+            SELECT DISTINCT pincode
+            FROM `spicemoney-dwh.analytics_dwh.v_pincode_master`
+            ),
+
+            sps_data AS (
+            SELECT
+                t2.final_pincode as pincode,
+                COUNT(DISTINCT base.group_id) AS SPs
+            FROM (
+                SELECT
+                a.agent_id,
+                sg.group_id
+                FROM (
+                SELECT agent_id, total_gtv_amt
+                FROM `spicemoney-dwh.analytics_dwh.csp_monthly_timeline_with_tu`
+                WHERE month_year = @month
+                    AND total_gtv_amt >= 250000
+                ) AS a
+                LEFT JOIN `spicemoney-dwh.analytics_dwh.sma_group` AS sg
+                ON a.agent_id = sg.client_id
+            ) AS base
+            LEFT JOIN `spicemoney-dwh.analytics_dwh.v_client_pincode` AS t2
+                ON base.group_id = t2.retailer_id
+            {state_clause}    -- WHERE t2.final_state = @state
+            AND base.group_id IS NOT NULL
+                
+            GROUP BY pincode
+            )
+
+            SELECT
+            t1.pincode,
+            COALESCE(t2.SPs, 0) AS SPs
+            FROM all_pincodes AS t1
+            LEFT JOIN sps_data AS t2
+            ON t1.pincode = t2.pincode
+            """
+            },
+
+
+    "SP_USAGE_CHURN": {
+    "value_col": "SP_USAGE_CHURN",
+    "unit_name": "SP Usage Churn (count)",
+    # Discrete churn levels: 0,1,2,3,4,5 and >5
+    # Keep bins as the exact cut points; the last bucket is "> last"
+    "bins": [0, 1, 2, 3, 4, 5],                   # 6 edges → 7 buckets
+    "discrete_counts": True,                      # IMPORTANT
+    # Labels must match the number of buckets: len(bins) + 1
+    "legend_labels": ["0", "1", "2", "3", "4", "5", ">5"],
+    # Colors (left→right is 0,1,2,3,4,5,>5). 0 should be green; higher = red.
+    "colors": [
+    "#006400",  # 0  : DarkGreen
+    "#FFF176",  # 1  : Light Yellow (Amber 300)
+    "#FFA726",  # 2  : Orange (Orange 400)
+    "#EF5350",  # 3  : Light Red (Red 400)
+    "#E53935",  # 4  : Darker Red (Red 600)
+    "#C62828",  # 5  : Darker Red (Red 800)
+    "#8B0000",  # >5 : Darkest Red (DarkRed)
+],
+    "unit_fmt": fmt_int_or_dash,
+    "zero_is_missing": False,                    # <- tell the app: 0 is NOT gray
+    "show_zero_grey_in_legend": False,          # <- don’t print “0 / missing” chip
+    # "bins": [0, 1, 4, 9, 16, 21, 26, 36, 51],
+    # "colors": ["#8B0000", "#B22222", "#FF0000", "#FFF700", "#FFD700",
+            #    "#ADFF2F", "#90EE90", "#32CD32", "#006400"],
+    "sql": """
+                WITH all_pincodes AS (
+                SELECT DISTINCT pincode
+                FROM `spicemoney-dwh.analytics_dwh.v_pincode_master`
+                ),
+
+                -- Map retailer -> PIN (filtered by state when provided)
+                pin_data AS (
+                SELECT
+                    t2.retailer_id AS agent_id,
+                    t2.final_pincode AS pincode
+                FROM `spicemoney-dwh.analytics_dwh.v_client_pincode` AS t2
+                
+                
+                ),
+
+                -- 3-month window ending at previous month: min/max/avg GTV (net of CMS success)
+                agg_data AS (
+                SELECT
+                    t.agent_id,
+                    ROUND(MIN(t.total_gtv_amt - t.cms_gtv_success), 1) AS gtv_min,
+                    ROUND(MAX(t.total_gtv_amt - t.cms_gtv_success), 1) AS gtv_max,
+                    ROUND(AVG(t.total_gtv_amt - t.cms_gtv_success), 1) AS gtv_avg
+                FROM `spicemoney-dwh.analytics_dwh.csp_monthly_timeline_with_tu` AS t
+                WHERE t.month_year IN (
+                    DATE_SUB("2025-10-01", INTERVAL 2 MONTH),
+                    DATE_SUB("2025-10-01", INTERVAL 1 MONTH),
+                    DATE_SUB("2025-10-01", INTERVAL 0 MONTH)
+                )
+                GROUP BY t.agent_id
+                ),
+
+                -- Previous month net GTV to keep only meaningful bases
+                prev_month_data AS (
+                SELECT
+                    t.agent_id,
+                    ROUND(t.total_gtv_amt - t.cms_gtv_success, 1) AS gtv_prev
+                FROM `spicemoney-dwh.analytics_dwh.csp_monthly_timeline_with_tu` AS t
+                WHERE t.month_year = DATE_SUB("2025-10-01", INTERVAL 1 MONTH)
+                ),
+
+                -- Keep agents with prev month >= 2.5e5
+                agg_data2 AS (
+                SELECT a.*
+                FROM agg_data a
+                LEFT JOIN prev_month_data p USING (agent_id)
+                WHERE p.gtv_prev >= 250000
+                ),
+
+                -- Focus-month realized net GTV
+                focus_month_txn_data AS (
+                SELECT
+                    t.agent_id,
+                    ROUND(t.total_gtv_amt - t.cms_gtv_success, 1) AS gtv_focus
+                FROM `spicemoney-dwh.analytics_dwh.csp_monthly_timeline_with_tu` AS t
+                WHERE t.month_year = "2025-10-01"
+                ),
+
+                -- Final per-agent performance classification
+                final_data AS (
+                SELECT
+                    pd.pincode,
+                    ad.agent_id,
+                    ROUND(COALESCE(SAFE_DIVIDE(fm.gtv_focus, NULLIF(ad.gtv_max, 0)), 0), 4) AS ratio
+                FROM agg_data2 ad
+                LEFT JOIN focus_month_txn_data fm USING (agent_id)
+                JOIN pin_data pd ON pd.agent_id = ad.agent_id
+                ),
+
+                churn_data AS (
+                SELECT
+                    pincode,
+                    COUNT(DISTINCT IF(ratio <= 0.2, agent_id, NULL)) AS SP_USAGE_CHURN
+                FROM final_data
+                GROUP BY pincode
+                )
+
+        select t1.*
+        from
+        (
+                SELECT
+                t1.pincode,
+                COALESCE(t2.SP_USAGE_CHURN, 0) AS SP_USAGE_CHURN
+                FROM all_pincodes AS t1
+                LEFT JOIN churn_data AS t2
+                ON t1.pincode = t2.pincode
+        ) as t1 left join 
+        (
+            SELECT DISTINCT pincode as final_pincode, state as final_state
+            FROM `spicemoney-dwh.analytics_dwh.v_pincode_master`
+        ) as t2
+        on t1.pincode = t2.final_pincode
+        {state_clause}   -- WHERE t2.final_state = @state
+        """
+        }
+
+
+} ### DICT end
+
+
+# KPI_CONFIG = {
+#     "Trxn_SMAs": {
+#         "value_col": "Trxn_SMAs",
+#         "unit_name": "Transacting SMAs",
+#         "unit_fmt": fmt_int,
+#         "bins": [0, 3, 8, 15, 20, 25, 35, 50, 10**9],
+#         "colors": R2G8,
+#         "sql": """
+#         WITH all_pincodes AS (
+#           SELECT DISTINCT pincode
+#           FROM `spicemoney-dwh.analytics_dwh.v_pincode_master`
+#         ),
+#         trxn_sma_data AS (
+#           SELECT pincode, COUNT(DISTINCT agent_id) AS Trxn_SMAs
+#           FROM (
+#             SELECT t1.agent_id, t2.final_pincode AS pincode
+#             FROM (
+#               SELECT agent_id
+#               FROM `spicemoney-dwh.analytics_dwh.csp_monthly_timeline_with_tu`
+#               WHERE month_year = @month AND total_gtv_amt > 0
+#             ) AS t1
+#             LEFT JOIN `spicemoney-dwh.analytics_dwh.v_client_pincode` AS t2
+#               ON t1.agent_id = t2.retailer_id
+#             {state_clause}  -- WHERE t2.final_state = @state
+#           )
+#           GROUP BY pincode
+#         )
+#         SELECT t1.pincode, COALESCE(Trxn_SMAs,0) AS Trxn_SMAs
+#         FROM all_pincodes AS t1
+#         LEFT JOIN trxn_sma_data AS t2
+#           ON t1.pincode = t2.pincode
+#         """
+#     },
+#     "AEPS_GTV_IN_LACS": {
+#         "value_col": "AEPS_GTV_IN_LACS",
+#         "unit_name": "AEPS GTV (Lakhs)",
+#         "unit_fmt": fmt_lakh_value,
+#         "bins": [0, 2, 5, 10, 15, 20, 25, 30, 50, 100, 10**9],
+#         "colors": ["#8B0000","#B22222","#FF0000","#FF4500","#FF7F00",
+#                    "#FFA500","#FFD700","#90EE90","#32CD32","#006400"],
+#         "sql": """
+#         WITH all_pincodes AS (
+#           SELECT DISTINCT pincode, state
+#           FROM `spicemoney-dwh.analytics_dwh.v_pincode_master`
+#         ),
+#         aeps_gtv_data AS (
+#           SELECT pincode, SUM(AEPS_GTV) AS AEPS_GTV
+#           FROM (
+#             SELECT t1.agent_id, AEPS_GTV, t2.final_pincode AS pincode
+#             FROM (
+#               SELECT agent_id, aeps_gtv_success AS AEPS_GTV
+#               FROM `spicemoney-dwh.analytics_dwh.csp_monthly_timeline_with_tu`
+#               WHERE month_year = @month AND total_gtv_amt > 0
+#             ) AS t1
+#             LEFT JOIN `spicemoney-dwh.analytics_dwh.v_client_pincode` AS t2
+#               ON t1.agent_id = t2.retailer_id
+#             {state_clause}  -- WHERE t2.final_state = @state
+#           )
+#           GROUP BY pincode
+#         )
+#         SELECT t1.pincode,
+#                ROUND(COALESCE(AEPS_GTV,0)/100000, 2) AS AEPS_GTV_IN_LACS
+#         FROM all_pincodes AS t1
+#         LEFT JOIN aeps_gtv_data AS t2
+#           ON t1.pincode = t2.pincode
+#         """
+#     },
+#     "CMS_GTV": {
+#         "value_col": "CMS_GTV",
+#         "unit_name": "CMS GTV (Lakhs)",
+#         "unit_fmt": fmt_lakh_from_rupees,   # rupees -> show as Lakhs
+#         "bins": [0, 2e5, 5e5, 1e6, 1.5e6, 2e6, 3e6, 5e6, 1e7, 1e12],
+#         "colors": ["#8B0000","#B22222","#FF0000","#FF7F00","#FFD700",
+#                    "#ADFF2F","#90EE90","#32CD32","#006400"],
+#         "sql": """
+#         WITH all_pincodes AS (
+#           SELECT DISTINCT pincode
+#           FROM `spicemoney-dwh.analytics_dwh.v_pincode_master`
+#         ),
+#         cms_gtv_data AS (
+#           SELECT pincode, SUM(CMS_GTV) AS CMS_GTV
+#           FROM (
+#             SELECT t1.agent_id, CMS_GTV, t2.final_pincode AS pincode
+#             FROM (
+#               SELECT agent_id, cms_gtv_success AS CMS_GTV
+#               FROM `spicemoney-dwh.analytics_dwh.csp_monthly_timeline_with_tu`
+#               WHERE month_year = @month AND total_gtv_amt > 0
+#             ) AS t1
+#             LEFT JOIN `spicemoney-dwh.analytics_dwh.v_client_pincode` AS t2
+#               ON t1.agent_id = t2.retailer_id
+#             {state_clause}  -- WHERE t2.final_state = @state
+#           )
+#           GROUP BY pincode
+#         )
+#         SELECT t1.pincode, COALESCE(CMS_GTV,0) AS CMS_GTV
+#         FROM all_pincodes AS t1
+#         LEFT JOIN cms_gtv_data AS t2
+#           ON t1.pincode = t2.pincode
+#         """
+#     },
+# }
 
 STATES = [
     "All States",'UTTAR PRADESH',
@@ -496,6 +853,46 @@ if clicked:
                       how="left", validate="m:1")
         g["_val_fmt"] = g[value_col].apply(unit_fmt)
 
+        vals = g[value_col].astype(float)
+
+        if cfg.get("discrete_counts", False):
+            # edges: [-0.5, 0.5, 1.5, 2.5, ..., 5.5, +inf]
+            base  = cfg["bins"]                 # [0,1,2,3,4,5,6]
+            edges = np.r_[ -0.5, np.array(base[:-1]) + 0.5, np.inf ]
+
+            # idx ∈ {0,1,2,3,4,5,6}   (0→0, 1→1, 2→2, …, >5→6)
+            idx = np.digitize(vals.to_numpy(), edges, right=False) - 1
+
+            # mark missing separately (these will be grey, not mixed with 0)
+            missing_mask = vals.isna().to_numpy()
+
+            # clamp (safety)
+            idx[idx < 0] = 0
+            idx[idx > (len(cfg["colors"]) - 1)] = len(cfg["colors"]) - 1
+
+            g["_bucket_idx"] = idx
+            g["_is_missing"] = missing_mask
+        else:
+            # continuous KPIs: keep your existing pd.cut path if you need it
+            bucket = pd.cut(
+                vals,
+                bins=cfg["bins"],
+                labels=False,
+                right=False,
+                include_lowest=True
+            )
+            g["_bucket_idx"] = bucket.fillna(-1).astype(int).to_numpy()
+            g["_is_missing"] = bucket.isna().to_numpy()
+
+
+        # COlors
+        # colors = cfg["colors"]
+        # missing_color = "#d9d9d9"
+
+        # ---- after you've set g["_bucket_idx"] and g["_is_missing"] ----
+        colors = cfg["colors"]                 # from KPI_CONFIG
+        missing_color = "#d9d9d9"              # keep your existing grey
+            
         # View
         if state == "All States":
             center, zoom = [22.0, 79.0], 5
@@ -505,12 +902,40 @@ if clicked:
 
         # color fn
         def color_for_value(x, edges, cols):
-            import math
-            if x is None or (isinstance(x, float) and (math.isnan(x))) or x == 0:
+            cfg = KPI_CONFIG[kpi_key]
+
+            # NaN / None -> grey
+            if x is None or (isinstance(x, float) and np.isnan(x)):
                 return "#d9d9d9"
+
+            # ----- DISCRETE COUNTS FIX -----
+            if cfg.get("discrete_counts", False):
+                k = int(round(x)) if x is not None else -1
+                if cfg.get("zero_is_missing", False) and k == 0:
+                    return "#d9d9d9"
+                if k < 0:
+                    return "#d9d9d9"
+                # last color is the ">= last" bucket
+                return cols[-1] if k >= (len(cols) - 1) else cols[k]
+            # --------------------------------
+
+            # Continuous behaviour (unchanged)
+            if x == 0 and cfg.get("zero_is_missing", True):
+                return "#d9d9d9"
+
             for hi, col in zip(edges[1:], cols):
-                if x <= hi: return col
+                if x <= hi:
+                    return col
             return cols[-1]
+
+            
+        # def color_for_value(x, edges, cols):
+        #     import math
+        #     if x is None or (isinstance(x, float) and (math.isnan(x))) or x == 0:
+        #         return "#d9d9d9"
+        #     for hi, col in zip(edges[1:], cols):
+        #         if x <= hi: return col
+        #     return cols[-1]
 
         # Folium map
         m = folium.Map(location=center, zoom_start=zoom, tiles="cartodbpositron")
@@ -529,16 +954,71 @@ if clicked:
             ),
         ).add_to(m)
 
+
+
+        
         # -------- Legend: top-right, scrollable, never clipped --------
-        legend_items = [("#d9d9d9", "0 / missing")]
+        # -------- Legend: top-right, scrollable, never clipped --------
+        # Bind the selected KPI's config for this render
+        cfg = KPI_CONFIG[kpi_key]      # <-- kpi_key is your currently selected KPI
+
+
+        legend_items = []
+        # show only a 'missing' chip (no “0 / …”) when this KPI says zero is not missing
+        if cfg.get("zero_is_missing", True):
+            legend_items.append(("#d9d9d9", "0 / missing"))
+        else:
+            legend_items.append(( "#d9d9d9", "missing"))  # optional; remove if you don’t want it
+
+
+        # legend_items = [("#d9d9d9", "0 / missing")]
+
+        # Per-KPI edge formatter used ONLY for continuous/range legends
         def _fmt_edge(v):
-            if kpi_key == "AEPS_GTV_IN_LACS": return f"{v:.0f} L"
-            if kpi_key == "Trxn_SMAs": return f"{int(v)}"
+            print("^^^^^^^^^^^^^^^^", kpi_key)
+            # keep the existing special-cases you had
+            if kpi_key == "NA":   # values are in rupees; show in Lakhs
+                return f"{v/100000:.0f} L"
+            if kpi_key in ("Trxn_SMAs",  "SPs", "GROSS_ADDS","AEPS_GTV_IN_LACS", "CMS_GTV_IN_LACS"):
+                print("&&&&&&&&&&&&&", kpi_key)
+                return f"{int(v)}"
+            # default (used by other continuous KPIs)
             return f"{v/100000:.0f} L"
 
-        for i in range(1, len(bins)-1):
-            legend_items.append((colors[i-1], f"{_fmt_edge(bins[i-1])} – {_fmt_edge(bins[i])}"))
-        legend_items.append((colors[-1], f"> {_fmt_edge(bins[-2])}"))
+        colors = cfg["colors"]
+        bins   = cfg["bins"]
+
+        # 1) If explicit legend labels are provided in the KPI config, use them verbatim
+        explicit_labels = cfg.get("legend_labels")
+        if explicit_labels:
+            # Make sure lengths match colors
+            for c, lbl in zip(colors, explicit_labels):
+                legend_items.append((c, lbl))
+
+        # 2) Else if this KPI is a discrete count (0,1,2,..., ≥N), build one label per bin
+        elif cfg.get("discrete_counts", False):
+            # Expect bins like [0,1,2,3,4,5,6,7,8] (last is the threshold for ≥)
+            # First N bins: exact integers; Last color: "≥ last"
+            for i in range(0, len(bins) - 1):
+                legend_items.append((colors[i], f"{int(bins[i])}"))
+            legend_items.append((colors[-1], f"≥ {int(bins[-1])}"))
+
+        # 3) Otherwise: continuous ranges (your original behavior)
+        else:
+            for i in range(1, len(bins)):
+                legend_items.append((colors[i-1], f"{_fmt_edge(bins[i-1])} – {_fmt_edge(bins[i])}"))
+            legend_items.append((colors[-1], f"> {_fmt_edge(bins[-1])}"))
+
+            
+        # legend_items = [("#d9d9d9", "0 / missing")]
+        # def _fmt_edge(v):
+        #     if kpi_key == "AEPS_GTV_IN_LACS": return f"{v:.0f} L"
+        #     if kpi_key == "Trxn_SMAs": return f"{int(v)}"
+        #     return f"{v/100000:.0f} L"
+
+        # for i in range(1, len(bins)-1):
+        #     legend_items.append((colors[i-1], f"{_fmt_edge(bins[i-1])} – {_fmt_edge(bins[i])}"))
+        # legend_items.append((colors[-1], f"> {_fmt_edge(bins[-2])}"))
 
         legend_html = f"""
         <div id="map-legend"
