@@ -2,7 +2,7 @@
 import re, json, calendar
 from datetime import date
 from dateutil.relativedelta import relativedelta
-
+import numpy as np
 import os
 import pandas as pd
 import geopandas as gpd
